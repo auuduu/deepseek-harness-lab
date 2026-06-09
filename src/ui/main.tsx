@@ -3,16 +3,15 @@ import { createRoot } from "react-dom/client";
 import type { HarnessRun, HarnessStep } from "../types/harness.js";
 import "./styles.css";
 
-type InspectorTab = "diff" | "commands" | "report" | "context";
+type ReviewTab = "diff" | "commands" | "report";
 
 function App() {
   const [runs, setRuns] = useState<HarnessRun[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [selectedRun, setSelectedRun] = useState<HarnessRun | null>(null);
-  const [activeTab, setActiveTab] = useState<InspectorTab>("diff");
+  const [reviewTab, setReviewTab] = useState<ReviewTab | null>(null);
   const [report, setReport] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void refreshRuns();
@@ -32,7 +31,6 @@ function App() {
   }, [selectedRun]);
 
   async function refreshRuns() {
-    setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/runs");
@@ -45,8 +43,6 @@ function App() {
       if (!nextId) setSelectedRun(null);
     } catch (fetchError) {
       setError(fetchError instanceof Error ? fetchError.message : String(fetchError));
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -60,177 +56,205 @@ function App() {
     setSelectedRun((await res.json()) as HarnessRun);
   }
 
-  const stats = useMemo(() => summarizeRuns(runs), [runs]);
   const realRuns = runs.filter(isRealProviderRun);
   const mockRuns = runs.filter((run) => !isRealProviderRun(run));
+  const stats = useMemo(() => summarizeRuns(runs), [runs]);
 
   return (
-    <div className="workbench">
-      <aside className="case-rail">
-        <header className="rail-head">
-          <div className="product-mark">HL</div>
+    <div className={`codex-shell ${reviewTab ? "review-open" : ""}`}>
+      <aside className="side">
+        <header className="side-brand">
+          <div className="dot-logo">H</div>
           <div>
-            <h1>Harness Lab</h1>
-            <p>DeepSeek / 火山方舟工作台</p>
+            <h1>Harness</h1>
+            <p>可审计 Agent Lab</p>
           </div>
-          <button className="ghost-button" onClick={() => void refreshRuns()}>
-            刷新
-          </button>
+          <button onClick={() => void refreshRuns()}>刷新</button>
         </header>
 
-        <section className="run-meters" aria-label="运行概览">
-          <Meter label="真实 API" value={String(stats.real)} tone="blue" />
-          <Meter label="完成" value={String(stats.completed)} tone="green" />
-          <Meter label="安全拦截" value={String(stats.skipped)} tone="amber" />
-        </section>
+        <div className="mini-stats">
+          <span>{stats.real} 真实 API</span>
+          <span>{stats.completed} 完成</span>
+          <span>{stats.skipped} 跳过</span>
+        </div>
 
-        {loading ? <div className="rail-empty">正在读取本地 trace...</div> : null}
-        {!loading && runs.length === 0 ? <div className="rail-empty">暂无运行记录</div> : null}
-
-        <RunGroup
-          title="真实 API 测试案例"
-          runs={realRuns}
-          selectedId={selectedId}
-          onSelect={(run) => {
-            setSelectedId(run.runId);
-            setActiveTab("diff");
-          }}
-        />
-        <RunGroup
-          title="Mock / 离线演示"
-          runs={mockRuns}
-          selectedId={selectedId}
-          onSelect={(run) => {
-            setSelectedId(run.runId);
-            setActiveTab("diff");
-          }}
-        />
+        <RunSection title="真实 API" runs={realRuns} selectedId={selectedId} onSelect={setSelectedId} />
+        <RunSection title="离线演示" runs={mockRuns} selectedId={selectedId} onSelect={setSelectedId} />
       </aside>
 
-      <main className="thread-pane">
-        {error ? <div className="error-banner">{error}</div> : null}
-        {selectedRun ? <RunThread run={selectedRun} /> : <EmptyThread />}
+      <main className="chat">
+        {error ? <div className="error-line">{error}</div> : null}
+        {selectedRun ? (
+          <>
+            <ChatTop run={selectedRun} onOpenReview={setReviewTab} />
+            <Conversation run={selectedRun} />
+            <BottomReview run={selectedRun} onOpenReview={setReviewTab} />
+          </>
+        ) : (
+          <div className="empty-chat">左侧选择一个 run。</div>
+        )}
       </main>
 
-      <aside className="inspector">
-        {selectedRun ? (
-          <Inspector run={selectedRun} activeTab={activeTab} setActiveTab={setActiveTab} report={report} />
-        ) : (
-          <div className="inspector-empty">选择一个 run</div>
-        )}
-      </aside>
-    </div>
-  );
-}
-
-function RunThread({ run }: { run: HarnessRun }) {
-  const commandSteps = run.steps.filter((step) => step.command);
-  const safetySkipped = run.steps.filter((step) => step.status === "skipped").length;
-  return (
-    <div className="thread">
-      <header className="thread-title">
-        <div className="thread-kicker">
-          <Badge tone={isRealProviderRun(run) ? "blue" : "gray"}>{isRealProviderRun(run) ? "真实 API" : "Mock"}</Badge>
-          <Badge tone={run.status === "completed" ? "green" : run.status === "failed" ? "red" : "amber"}>
-            {statusText(run.status)}
-          </Badge>
-          {safetySkipped ? <Badge tone="amber">安全跳过 {safetySkipped}</Badge> : null}
-        </div>
-        <h2>{run.task}</h2>
-        <p>
-          {run.runId} · {formatDateTime(run.startedAt)} · {run.metrics.model ?? "unknown model"}
-        </p>
-      </header>
-
-      <Message role="user" title="用户任务">
-        <p>{run.task}</p>
-      </Message>
-
-      <Message role="assistant" title="Harness 执行概览">
-        <div className="summary-grid">
-          <Fact label="目标仓库" value={shortPath(run.repoPath)} />
-          <Fact label="执行分支" value={run.branchName ?? "未创建"} />
-          <Fact label="验证命令" value={run.testCommand ?? "未配置"} />
-          <Fact label="Token" value={run.metrics.totalTokens ? String(run.metrics.totalTokens) : "无记录"} />
-        </div>
-        {run.finalSummary ? <p className="final-summary">{run.finalSummary}</p> : null}
-      </Message>
-
-      <section className="step-stream" aria-label="执行时间线">
-        {run.steps.map((step) => (
-          <StepCard key={step.id} step={step} />
-        ))}
-      </section>
-
-      {commandSteps.length ? (
-        <Message role="assistant" title="命令结果">
-          <div className="command-strip">
-            {commandSteps.map((step) => (
-              <span key={step.id} className={`command-chip ${step.status}`}>
-                {step.command}
-              </span>
-            ))}
-          </div>
-        </Message>
+      {selectedRun && reviewTab ? (
+        <ReviewDrawer run={selectedRun} tab={reviewTab} setTab={setReviewTab} report={report} onClose={() => setReviewTab(null)} />
       ) : null}
     </div>
   );
 }
 
-function Inspector({
-  run,
-  activeTab,
-  setActiveTab,
-  report
-}: {
-  run: HarnessRun;
-  activeTab: InspectorTab;
-  setActiveTab: (tab: InspectorTab) => void;
-  report: string;
-}) {
-  const tabs: Array<{ id: InspectorTab; label: string }> = [
-    { id: "diff", label: "Diff" },
-    { id: "commands", label: "命令" },
-    { id: "report", label: "报告" },
-    { id: "context", label: "上下文" }
-  ];
+function ChatTop({ run, onOpenReview }: { run: HarnessRun; onOpenReview: (tab: ReviewTab) => void }) {
   return (
-    <>
-      <header className="inspector-head">
-        <h2>检查器</h2>
-        <div className="artifact-links">
-          <a href={`/api/runs/${run.runId}/artifacts/run.json`} target="_blank" rel="noreferrer">
-            JSON
-          </a>
-          <a href={`/api/runs/${run.runId}/artifacts/case-study.md`} target="_blank" rel="noreferrer">
-            Case
-          </a>
+    <header className="chat-top">
+      <div>
+        <div className="crumb">
+          <span>{isRealProviderRun(run) ? "DeepSeek 真实 API" : "Mock run"}</span>
+          <span>{run.metrics.model ?? "unknown"}</span>
+          <span>{statusText(run.status)}</span>
         </div>
-      </header>
-      <div className="segmented" role="tablist" aria-label="检查器视图">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={activeTab === tab.id ? "active" : ""}
-            onClick={() => setActiveTab(tab.id)}
-            role="tab"
-            aria-selected={activeTab === tab.id}
-          >
-            {tab.label}
-          </button>
-        ))}
+        <h2>{runTitle(run)}</h2>
       </div>
-      <div className="inspector-body">
-        {activeTab === "diff" ? <CodeBlock language="diff" value={run.finalDiff || run.patches.at(-1)?.patch || ""} /> : null}
-        {activeTab === "commands" ? <CommandPanel run={run} /> : null}
-        {activeTab === "report" ? <CodeBlock language="markdown" value={report || "报告未生成"} /> : null}
-        {activeTab === "context" ? <ContextPanel run={run} /> : null}
-      </div>
-    </>
+      <nav className="top-actions">
+        <button onClick={() => onOpenReview("diff")}>Diff</button>
+        <button onClick={() => onOpenReview("commands")}>命令</button>
+        <button onClick={() => onOpenReview("report")}>报告</button>
+      </nav>
+    </header>
   );
 }
 
-function RunGroup({
+function Conversation({ run }: { run: HarnessRun }) {
+  const skipped = run.steps.filter((step) => step.status === "skipped");
+  return (
+    <section className="conversation">
+      <Bubble role="user" label="你">
+        <p>{run.task}</p>
+      </Bubble>
+
+      <Bubble role="assistant" label="HL">
+        <p>
+          我已在 <code>{run.branchName ?? "未创建分支"}</code> 上执行。目标仓库：
+          <code>{shortPath(run.repoPath)}</code>。
+        </p>
+        <p>
+          验证：<code>{run.testCommand ?? "未配置"}</code>
+          {run.metrics.totalTokens ? ` · ${run.metrics.totalTokens} tokens` : ""}
+        </p>
+      </Bubble>
+
+      <div className="event-stream">
+        {run.steps.map((step) => (
+          <EventRow key={step.id} step={step} />
+        ))}
+      </div>
+
+      {skipped.length ? (
+        <Bubble role="assistant" label="HL">
+          <p>
+            安全策略跳过了 {skipped.length} 条模型建议命令；用户显式 <code>--test</code> 仍继续执行。
+          </p>
+        </Bubble>
+      ) : null}
+
+      <Bubble role="assistant" label="HL">
+        <p className="summary-text">{run.finalSummary ?? "暂无最终总结。"}</p>
+      </Bubble>
+    </section>
+  );
+}
+
+function EventRow({ step }: { step: HarnessStep }) {
+  return (
+    <article className={`event-row ${step.status}`}>
+      <span className="event-icon">{eventIcon(step)}</span>
+      <div className="event-main">
+        <div className="event-title">
+          <strong>{stepTitle(step)}</strong>
+          <span>{stepStatusText(step.status)}</span>
+        </div>
+        {step.command ? <code>{step.command}</code> : null}
+        {step.output ? <p>{firstLine(step.output)}</p> : null}
+        {step.error ? <p className="event-error">{firstLine(step.error)}</p> : null}
+      </div>
+    </article>
+  );
+}
+
+function BottomReview({ run, onOpenReview }: { run: HarnessRun; onOpenReview: (tab: ReviewTab) => void }) {
+  const stat = diffStat(run.finalDiff ?? "");
+  return (
+    <footer className="bottom-bar">
+      <div className="change-line">
+        <strong>{stat.files} files changed</strong>
+        <span className="add">+{stat.added}</span>
+        <span className="del">-{stat.removed}</span>
+      </div>
+      <button onClick={() => onOpenReview("diff")}>Review</button>
+      <div className="goal-line">
+        <span>追踪 run</span>
+        <strong>{run.runId}</strong>
+      </div>
+    </footer>
+  );
+}
+
+function ReviewDrawer({
+  run,
+  tab,
+  setTab,
+  report,
+  onClose
+}: {
+  run: HarnessRun;
+  tab: ReviewTab;
+  setTab: (tab: ReviewTab) => void;
+  report: string;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="review">
+      <header className="review-head">
+        <h2>Review</h2>
+        <button onClick={onClose}>关闭</button>
+      </header>
+      <div className="review-tabs">
+        <button className={tab === "diff" ? "active" : ""} onClick={() => setTab("diff")}>
+          Diff
+        </button>
+        <button className={tab === "commands" ? "active" : ""} onClick={() => setTab("commands")}>
+          命令
+        </button>
+        <button className={tab === "report" ? "active" : ""} onClick={() => setTab("report")}>
+          报告
+        </button>
+      </div>
+      <div className="review-body">
+        {tab === "diff" ? <CodeBlock value={run.finalDiff || run.patches.at(-1)?.patch || "暂无 diff"} /> : null}
+        {tab === "commands" ? <CommandList run={run} /> : null}
+        {tab === "report" ? <CodeBlock value={report || "报告未生成"} /> : null}
+      </div>
+    </aside>
+  );
+}
+
+function CommandList({ run }: { run: HarnessRun }) {
+  const commands = run.steps.filter((step) => step.command);
+  return (
+    <div className="command-list">
+      {commands.map((step) => (
+        <article key={step.id} className={`command-block ${step.status}`}>
+          <header>
+            <span>{stepStatusText(step.status)}</span>
+            <code>{step.command}</code>
+          </header>
+          {step.output ? <pre>{step.output}</pre> : null}
+          {step.error ? <pre>{step.error}</pre> : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function RunSection({
   title,
   runs,
   selectedId,
@@ -239,147 +263,39 @@ function RunGroup({
   title: string;
   runs: HarnessRun[];
   selectedId: string;
-  onSelect: (run: HarnessRun) => void;
+  onSelect: (runId: string) => void;
 }) {
-  if (runs.length === 0) return null;
+  if (!runs.length) return null;
   return (
-    <section className="run-group">
+    <section className="run-section">
       <h2>{title}</h2>
-      <div className="run-list">
-        {runs.map((run) => (
-          <button
-            key={run.runId}
-            className={`run-card ${selectedId === run.runId ? "selected" : ""}`}
-            onClick={() => onSelect(run)}
-          >
-            <span className={`status-line ${run.status}`} />
-            <span className="run-card-body">
-              <span className="run-card-meta">
-                <Badge tone={isRealProviderRun(run) ? "blue" : "gray"}>{isRealProviderRun(run) ? "真实" : "Mock"}</Badge>
-                <span>{formatDate(run.startedAt)}</span>
-              </span>
-              <strong>{runTitle(run)}</strong>
-              <span>{run.metrics.model ?? "unknown"} · {statusText(run.status)}</span>
-            </span>
-          </button>
-        ))}
-      </div>
+      {runs.map((run) => (
+        <button key={run.runId} className={`run-pill ${selectedId === run.runId ? "active" : ""}`} onClick={() => onSelect(run.runId)}>
+          <span className={`run-dot ${run.status}`} />
+          <span>
+            <strong>{runTitle(run)}</strong>
+            <small>{formatDate(run.startedAt)} · {statusText(run.status)}</small>
+          </span>
+        </button>
+      ))}
     </section>
   );
 }
 
-function StepCard({ step }: { step: HarnessStep }) {
+function Bubble({ role, label, children }: { role: "user" | "assistant"; label: string; children: React.ReactNode }) {
   return (
-    <article className={`step-card ${step.status}`}>
-      <div className="step-marker">
-        <span />
-      </div>
-      <div className="step-content">
-        <div className="step-head">
-          <div>
-            <span className="step-type">{stepTypeText(step.type)}</span>
-            <h3>{step.title}</h3>
-          </div>
-          <Badge tone={stepTone(step.status)}>{stepStatusText(step.status)}</Badge>
-        </div>
-        {step.command ? <code>{step.command}</code> : null}
-        {step.output ? <pre>{step.output}</pre> : null}
-        {step.error ? <pre className="error-text">{step.error}</pre> : null}
-      </div>
+    <article className={`bubble ${role}`}>
+      <div className="avatar">{label}</div>
+      <div className="bubble-body">{children}</div>
     </article>
   );
 }
 
-function CommandPanel({ run }: { run: HarnessRun }) {
-  const commands = run.steps.filter((step) => step.command);
-  if (commands.length === 0) return <div className="muted-box">没有命令记录</div>;
+function CodeBlock({ value }: { value: string }) {
   return (
-    <div className="command-panel">
-      {commands.map((step) => (
-        <article key={step.id} className={`command-item ${step.status}`}>
-          <div className="command-item-head">
-            <Badge tone={stepTone(step.status)}>{stepStatusText(step.status)}</Badge>
-            <code>{step.command}</code>
-          </div>
-          {step.output ? <pre>{step.output}</pre> : null}
-          {step.error ? <pre className="error-text">{step.error}</pre> : null}
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function ContextPanel({ run }: { run: HarnessRun }) {
-  const summary = run.repoSummary;
-  return (
-    <div className="context-panel">
-      <div className="summary-grid single">
-        <Fact label="仓库" value={run.repoPath} />
-        <Fact label="分支" value={run.branchName ?? "未创建"} />
-        <Fact label="回滚" value={run.rollbackHint ?? "无"} />
-        <Fact label="文件数" value={String(summary?.files.length ?? 0)} />
-      </div>
-      <h3>候选文件</h3>
-      <div className="file-list">
-        {(summary?.candidateFiles ?? []).map((file) => (
-          <article key={file.path} className="file-row">
-            <strong>{file.path}</strong>
-            <span>{file.reason}</span>
-          </article>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Message({ role, title, children }: { role: "user" | "assistant"; title: string; children: React.ReactNode }) {
-  return (
-    <section className={`message ${role}`}>
-      <div className="avatar">{role === "user" ? "你" : "HL"}</div>
-      <div className="message-body">
-        <h3>{title}</h3>
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function Meter({ label, value, tone }: { label: string; value: string; tone: "blue" | "green" | "amber" }) {
-  return (
-    <div className={`meter ${tone}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function Badge({ tone, children }: { tone: "blue" | "green" | "amber" | "red" | "gray"; children: React.ReactNode }) {
-  return <span className={`badge ${tone}`}>{children}</span>;
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="fact">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function CodeBlock({ language, value }: { language: string; value: string }) {
-  return (
-    <pre className="code-block">
-      <code data-language={language}>{value || "暂无内容"}</code>
+    <pre className="code">
+      <code>{value}</code>
     </pre>
-  );
-}
-
-function EmptyThread() {
-  return (
-    <div className="empty-thread">
-      <h2>没有选中的 run</h2>
-      <p>左侧选择一个真实 API 或 mock 案例。</p>
-    </div>
   );
 }
 
@@ -400,6 +316,27 @@ function runTitle(run: HarnessRun): string {
   if (run.task.toLowerCase().includes("calculator")) return "Calculator 修复";
   if (run.task.toLowerCase().includes("homepage") || run.task.includes("主页")) return "主页项目卡片";
   return run.task;
+}
+
+function stepTitle(step: HarnessStep): string {
+  const labels: Record<HarnessStep["type"], string> = {
+    preflight: "检查仓库并创建分支",
+    scan: "扫描上下文",
+    plan: "生成计划",
+    patch: "应用补丁",
+    command: "运行命令",
+    evaluate: "评估结果",
+    report: "生成报告"
+  };
+  return labels[step.type] ?? step.title;
+}
+
+function eventIcon(step: HarnessStep): string {
+  if (step.status === "skipped") return "!";
+  if (step.status === "failed") return "x";
+  if (step.type === "command") return "$";
+  if (step.type === "patch") return "+";
+  return "•";
 }
 
 function statusText(status: HarnessRun["status"]): string {
@@ -423,24 +360,20 @@ function stepStatusText(status: HarnessStep["status"]): string {
   }[status];
 }
 
-function stepTypeText(type: HarnessStep["type"]): string {
-  return {
-    preflight: "预检",
-    scan: "扫描",
-    plan: "规划",
-    patch: "补丁",
-    command: "命令",
-    evaluate: "评估",
-    report: "报告"
-  }[type];
+function diffStat(diff: string) {
+  const files = new Set<string>();
+  let added = 0;
+  let removed = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) files.add(line);
+    if (line.startsWith("+") && !line.startsWith("+++")) added += 1;
+    if (line.startsWith("-") && !line.startsWith("---")) removed += 1;
+  }
+  return { files: files.size, added, removed };
 }
 
-function stepTone(status: HarnessStep["status"]): "blue" | "green" | "amber" | "red" | "gray" {
-  if (status === "completed") return "green";
-  if (status === "failed") return "red";
-  if (status === "skipped") return "amber";
-  if (status === "running") return "blue";
-  return "gray";
+function firstLine(value: string): string {
+  return value.split("\n").find((line) => line.trim())?.trim().slice(0, 180) ?? "";
 }
 
 function shortPath(value: string): string {
@@ -455,16 +388,6 @@ function formatDate(value: string): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit"
-  }).format(new Date(value));
-}
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
   }).format(new Date(value));
 }
 
