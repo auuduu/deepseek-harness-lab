@@ -1,0 +1,9 @@
+{
+  "name": "harness-fixture-bug-repo",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/calculator.test.js"
+  }
+}
