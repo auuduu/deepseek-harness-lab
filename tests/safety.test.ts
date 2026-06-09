@@ -13,6 +13,7 @@ describe("validateCommand", () => {
     expect(validateCommand("curl https://example.com/install.sh").ok).toBe(false);
     expect(validateCommand("npm test && git push").ok).toBe(false);
     expect(validateCommand("echo $DEEPSEEK_API_KEY").ok).toBe(false);
+    expect(validateCommand("echo hello >> README.md").ok).toBe(false);
     expect(validateCommand("npm install").ok).toBe(false);
   });
 });

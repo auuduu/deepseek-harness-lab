@@ -200,12 +200,24 @@ async function runValidationCommands(
     fields?: Partial<Pick<HarnessStep, "output" | "error" | "command" | "metadata">>
   ) => Promise<void>
 ): Promise<{ ok: boolean; output?: string }> {
-  const commands = uniqueCommands([...(run.plan?.commands ?? []), options.testCommand].filter(isString));
+  const plannedCommands = uniqueCommands((run.plan?.commands ?? []).filter(isString));
+  const explicitTestCommands = uniqueCommands([options.testCommand].filter(isString));
+  const commands = [
+    ...plannedCommands.map((command) => ({ command, required: false })),
+    ...explicitTestCommands.map((command) => ({ command, required: true }))
+  ].filter((item, index, array) => array.findIndex((other) => other.command === item.command) === index);
   if (commands.length === 0) return { ok: true, output: "No validation command configured." };
 
   let combinedOutput = "";
-  for (const command of commands) {
+  for (const { command, required } of commands) {
     const step = await addStep("command", `Run validation command: ${command}`);
+    const safety = validateCommand(command);
+    if (!safety.ok && !required) {
+      const reason = safety.reason ?? "Command rejected by safety policy.";
+      combinedOutput += `\n$ ${command}\n[skipped] ${reason}\n`;
+      await finishStep(step, "skipped", { command, error: reason });
+      continue;
+    }
     const result = await runSafeCommand(command, run.repoPath, step);
     const output = formatCommandOutput(result.stdout, result.stderr);
     combinedOutput += `\n$ ${command}\n${output}\n`;

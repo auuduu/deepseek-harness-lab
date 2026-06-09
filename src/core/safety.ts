@@ -29,6 +29,8 @@ const DENY_PATTERNS = [
   /`/,
   /\$\(/,
   /\$[A-Z0-9_]*(KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*/i,
+  /(^|[^=])>{1,2}/,
+  /(^|[^<])<{1,2}/,
   />\s*\//,
   /\bnpm\s+(install|i|add|audit\s+fix)\b/i,
   /\bpnpm\s+(install|i|add|audit\s+fix)\b/i,

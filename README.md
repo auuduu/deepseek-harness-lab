@@ -115,6 +115,12 @@ Fixture run:
 - Real provider verification: Volcengine Ark / Claude Code env completed a fixture run with `deepseek-v4-flash` in 1 iteration.
 - Write-up: [docs/case-study-fixture-real-provider.md](docs/case-study-fixture-real-provider.md).
 
+Chinese real API run:
+
+- Task: add a Chinese sentence to `README.md`.
+- Result: DeepSeek generated a patch, Harness skipped an unsafe `>>` append command, then `npm run check` passed.
+- Write-up: [docs/case-study-cn-real-provider.md](docs/case-study-cn-real-provider.md).
+
 Homepage run:
 
 - Target repo: the local personal homepage repo.
