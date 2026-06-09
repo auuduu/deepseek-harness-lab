@@ -11,6 +11,7 @@ This is a portfolio MVP for DeepSeek Harness product/developer interviews. It fo
 - Refuses dirty repos by default; use `--allow-dirty` only when intentional.
 - Scans git state, file tree, package scripts, and high-signal candidate files.
 - Uses DeepSeek by default via `DEEPSEEK_API_KEY` and model `deepseek-v4-flash`.
+- Also supports Volcengine Ark / Claude Code style env vars: `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_MODEL`.
 - Applies provider-generated unified diffs with `git apply --check` first.
 - Runs allowlisted validation commands and retries up to 3 iterations.
 - Writes `.harness-lab/runs/<runId>/run.json`, patches, diff, context pack, and `case-study.md`.
@@ -44,10 +45,22 @@ Run with DeepSeek:
 
 ```bash
 export DEEPSEEK_API_KEY="..."
+export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 npm run harness -- run \
   --repo /path/to/your/repo \
   --task "Add a project card and validate the page" \
   --test "npm run build" \
+  --mode auto
+```
+
+Run with a Volcengine Ark Claude Code-compatible endpoint already configured in your shell:
+
+```bash
+# Uses ANTHROPIC_AUTH_TOKEN, ANTHROPIC_BASE_URL, and ANTHROPIC_MODEL.
+npm run harness -- run \
+  --repo /path/to/your/repo \
+  --task "Fix a focused issue and validate it" \
+  --test "npm test" \
   --mode auto
 ```
 
@@ -72,7 +85,12 @@ Open `http://localhost:5173`.
 
 ## DeepSeek API
 
-The real provider uses DeepSeek's OpenAI-compatible Chat Completions API at `https://api.deepseek.com/chat/completions`. The default model is `deepseek-v4-flash`. DeepSeek's public docs currently note that older names including `deepseek-chat` and `deepseek-reasoner` are in a deprecation window ending on 2026-07-24, so this project keeps the model configurable through `DEEPSEEK_MODEL`.
+The real provider supports two gateway shapes:
+
+- DeepSeek OpenAI-compatible Chat Completions API at `https://api.deepseek.com/chat/completions`.
+- Anthropic-compatible gateways such as Volcengine Ark configurations used by Claude Code.
+
+The default model is `deepseek-v4-flash`. DeepSeek's public docs currently note that older names including `deepseek-chat` and `deepseek-reasoner` are in a deprecation window ending on 2026-07-24, so this project keeps the model configurable through `DEEPSEEK_MODEL` or `ANTHROPIC_MODEL`.
 
 Reference: [DeepSeek API Docs](https://api-docs.deepseek.com/zh-cn/).
 
@@ -94,6 +112,8 @@ Fixture run:
 - Task: fix a failing calculator test.
 - Result: one patch changed `return a - b` to `return a + b`.
 - Validation: `npm test` passed.
+- Real provider verification: Volcengine Ark / Claude Code env completed a fixture run with `deepseek-v4-flash` in 1 iteration.
+- Write-up: [docs/case-study-fixture-real-provider.md](docs/case-study-fixture-real-provider.md).
 
 Homepage run:
 
@@ -120,4 +140,15 @@ Current local validation:
 npm run typecheck
 npm test
 npm run build
+```
+
+Real provider smoke test:
+
+```bash
+# Uses existing ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL.
+npm run harness -- run \
+  --repo /tmp/harness-lab-real-fixture/repo \
+  --task "Fix the calculator add function so tests pass" \
+  --test "npm test" \
+  --mode auto
 ```

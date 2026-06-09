@@ -11,6 +11,7 @@ For a DeepSeek Harness product/developer interview, a static personal homepage n
 - Branch: `harness-lab/20260609t111528z-ifkv6j`
 - Provider/model: `mock-deterministic` for offline validation
 - Default real provider: DeepSeek `deepseek-v4-flash`
+- Supported real gateway: official DeepSeek OpenAI-compatible API or Volcengine Ark Anthropic-compatible Claude Code env vars
 - Status: completed
 - Validation command: `test -f index.html`
 
@@ -59,9 +60,9 @@ index 41b2bd9..03aac6b 100644
 
 The useful product is the harness around the model, not just the model call. The run created a branch, packed repo context, produced a structured plan, applied a patch, ran validation, and generated rollback instructions. That is the part an interviewer can audit.
 
-## Limitation
+## Provider Note
 
-This public case study uses the deterministic mock provider because no `DEEPSEEK_API_KEY` was available in the local environment. The production path is implemented through DeepSeek's OpenAI-compatible API and can be exercised by setting `DEEPSEEK_API_KEY`.
+The homepage run used the deterministic mock provider so the public page could be updated without depending on API availability. The production path also supports both `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` and the Volcengine Ark Claude Code env shape: `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, and `ANTHROPIC_MODEL`. A real-provider fixture run is documented in [case-study-fixture-real-provider.md](case-study-fixture-real-provider.md).
 
 ## Rollback
 
